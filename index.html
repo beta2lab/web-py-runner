@@ -101,7 +101,8 @@
     }
 
     input[type="file"],
-    input[type="text"] {
+    input[type="text"],
+    textarea {
       width: 100%;
       padding: 12px;
       border: 2px solid var(--border-color);
@@ -110,10 +111,18 @@
       color: var(--text-primary);
       font-size: 14px;
       transition: border-color 0.3s;
+      font-family: inherit;
+    }
+
+    textarea {
+      min-height: 100px;
+      resize: vertical;
+      font-family: 'Courier New', monospace;
     }
 
     input[type="file"]:focus,
-    input[type="text"]:focus {
+    input[type="text"]:focus,
+    textarea:focus {
       outline: none;
       border-color: var(--accent-color);
     }
@@ -158,8 +167,7 @@
       color: var(--text-primary);
       border: 2px solid var(--border-color);
     }
-
-    .btn-secondary:hover:not(:disabled) {
+     .btn-secondary:hover:not(:disabled) {
       background: var(--border-color);
     }
 
@@ -220,6 +228,11 @@
       border: 2px solid var(--border-color);
       color: var(--text-primary);
     }
+    
+    .error-log {
+        color: var(--danger-color);
+        font-weight: bold;
+    }
 
     #output:empty::before {
       content: "A saída aparecerá aqui...";
@@ -238,53 +251,45 @@
       font-size: 13px;
       color: var(--text-secondary);
     }
-
-    .progress-bar {
-      display: none;
-      width: 100%;
-      height: 6px;
-      background: var(--border-color);
-      border-radius: 3px;
-      overflow: hidden;
-      margin-top: 8px;
+    
+    .download-links {
+        margin-top: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .download-link {
+        display: inline-block;
+        padding: 8px 12px;
+        background-color: var(--bg-secondary);
+        color: var(--accent-color);
+        text-decoration: none;
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+        transition: background-color 0.3s;
+    }
+    
+    .download-link:hover {
+        background-color: var(--border-color);
     }
 
-    .progress-bar.active {
-      display: block;
-    }
-
-    .progress-fill {
-      height: 100%;
-      background: var(--accent-color);
-      width: 0%;
-      transition: width 0.3s;
-      animation: progress 1.5s ease-in-out infinite;
-    }
-
-    @keyframes progress {
-      0% { transform: translateX(-100%); }
-      100% { transform: translateX(400%); }
-    }
 
     @media (max-width: 768px) {
       .container {
         padding: 12px;
       }
-
       header {
         flex-direction: column;
         gap: 16px;
         text-align: center;
       }
-
       h1 {
         font-size: 24px;
       }
-
       .button-group {
         flex-direction: column;
       }
-
       button {
         width: 100%;
         justify-content: center;
@@ -311,9 +316,11 @@
           <label for="inputFiles">📁 Ficheiros de Entrada (opcional)</label>
           <input type="file" id="inputFiles" multiple onchange="updateFileInfo('input')">
           <div id="inputInfo" class="file-info" style="display:none;"></div>
-          <div class="progress-bar" id="uploadProgress">
-            <div class="progress-fill"></div>
-          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="stdin">⌨️ Entrada Padrão (stdin, opcional)</label>
+          <textarea id="stdin" placeholder="Conteúdo que o script pode ler via input() ou sys.stdin"></textarea>
         </div>
 
         <div class="form-group">
@@ -325,8 +332,8 @@
           <button type="submit" class="btn-primary" id="runBtn">
             ▶️ Executar Script
           </button>
-          <button type="button" class="btn-secondary" onclick="clearOutput()">
-            🗑️ Limpar Saída
+          <button type="button" class="btn-secondary" onclick="clearAll()">
+            🗑️ Limpar Tudo
           </button>
         </div>
       </form>
@@ -340,25 +347,32 @@
     <div class="card">
       <div class="output-header">
         <h2>📤 Saída</h2>
+         <button type="button" class="btn-secondary" onclick="copyOutput()" id="copyBtn">
+            📋 Copiar
+          </button>
       </div>
       <pre id="output"></pre>
+    </div>
+    
+    <div class="card" id="outputFilesCard" style="display: none;">
+      <h2>📄 Ficheiros de Saída</h2>
+      <div id="downloadLinks" class="download-links"></div>
     </div>
   </div>
 
   <script>
-    let pyodideReady = null;
+    let pyodide = null;
     let isLoading = false;
 
-    // Inicializa o Pyodide ao carregar a página
     window.addEventListener('DOMContentLoaded', async () => {
       showLoader('A carregar ambiente Pyodide...');
       try {
-        pyodideReady = await loadPyodide();
-        hideLoader();
+        pyodide = await loadPyodide();
         document.getElementById('output').textContent = '✅ Pyodide carregado com sucesso! Pronto para executar scripts Python.';
       } catch (err) {
-        hideLoader();
         document.getElementById('output').textContent = '❌ Erro ao carregar Pyodide: ' + err.message;
+      } finally {
+        hideLoader();
       }
     });
 
@@ -404,33 +418,72 @@
       }
     }
 
-    function formatBytes(bytes) {
-      if (bytes === 0) return '0 Bytes';
-      const k = 1024;
-      const sizes = ['Bytes', 'KB', 'MB'];
-      const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+    function formatBytes(bytes, decimals = 2) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const dm = decimals < 0 ? 0 : decimals;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
     }
 
-    function clearOutput() {
+    function clearAll() {
       document.getElementById('output').textContent = '';
+      document.getElementById('outputFilesCard').style.display = 'none';
+      document.getElementById('downloadLinks').innerHTML = '';
+    }
+    
+    function copyOutput() {
+        const output = document.getElementById('output');
+        const copyBtn = document.getElementById('copyBtn');
+        navigator.clipboard.writeText(output.textContent).then(() => {
+            copyBtn.textContent = '✅ Copiado!';
+            setTimeout(() => { copyBtn.textContent = '📋 Copiar'; }, 2000);
+        });
     }
 
     function findRequiredPackages(code) {
       const packages = new Set();
-      // Lista de módulos da biblioteca padrão para ignorar
       const stdLib = new Set(['os', 'sys', 'math', 'json', 'io', 're', 'traceback', 'contextlib', 'random', 'datetime', 'glob']);
-      
-      // Regex para declarações como 'import pandas' ou 'from numpy import ...'
-      const importRegex = /(?:^|\n)\s*(?:import|from)\s+([a-zA-Z0-9_]+)/g;
+      const importRegex = /(?:^|\n)\s*?(?:import|from)\s+([a-zA-Z0-9_.]+)/g;
       let match;
       while ((match = importRegex.exec(code)) !== null) {
-        const pkg = match[1];
+        // Pega apenas o pacote principal (ex: 'pandas' de 'pandas.DataFrame')
+        const pkg = match[1].split('.')[0];
         if (!stdLib.has(pkg)) {
             packages.add(pkg);
         }
       }
       return Array.from(packages);
+    }
+    
+    function generateDownloadLinks(files) {
+        const container = document.getElementById('downloadLinks');
+        const card = document.getElementById('outputFilesCard');
+        container.innerHTML = '';
+        
+        if (files.length === 0) {
+            card.style.display = 'none';
+            return;
+        }
+
+        card.style.display = 'block';
+        files.forEach(filename => {
+            try {
+                const data = pyodide.FS.readFile(filename, { encoding: 'binary' });
+                const blob = new Blob([data], { type: 'application/octet-stream' });
+                const url = URL.createObjectURL(blob);
+                
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = filename;
+                link.textContent = `🔗 Descarregar ${filename} (${formatBytes(blob.size)})`;
+                link.className = 'download-link';
+                container.appendChild(link);
+            } catch (e) {
+                console.error(`Erro ao ler o ficheiro ${filename} do sistema de ficheiros virtual:`, e);
+            }
+        });
     }
 
     async function runScript() {
@@ -438,6 +491,7 @@
 
       const scriptFile = document.getElementById("scriptFile").files[0];
       const inputFiles = document.getElementById("inputFiles").files;
+      const stdinText = document.getElementById("stdin").value;
       const args = document.getElementById("args").value.trim().split(/\s+/).filter(Boolean);
       const output = document.getElementById("output");
 
@@ -446,67 +500,105 @@
         return;
       }
 
-      if (!pyodideReady) {
+      if (!pyodide) {
         output.textContent = "⏳ Pyodide ainda está a carregar. Por favor, aguarde...";
         return;
       }
 
-      showLoader('A analisar o script...');
-      output.textContent = '';
+      showLoader('A preparar o ambiente...');
+      clearAll();
 
       try {
-        const pyodide = await pyodideReady;
         const code = await scriptFile.text();
         
-        // Deteta e carrega pacotes necessários como pandas, numpy, etc.
         const requiredPackages = findRequiredPackages(code);
         if (requiredPackages.length > 0) {
             showLoader(`A carregar pacotes: ${requiredPackages.join(', ')}...`);
-            await pyodide.loadPackage(requiredPackages);
+            try {
+                await pyodide.loadPackage(requiredPackages);
+            } catch (err) {
+                 throw new Error(`Falha ao carregar o pacote '${requiredPackages.join(', ')}'. Verifique se o nome está correto e se é suportado pelo Pyodide. Erro original: ${err.message}`);
+            }
         }
-
-        showLoader('A preparar o ambiente...');
-
-        // Mostra o progresso para o upload de ficheiros
-        if (inputFiles.length > 0) {
-          document.getElementById('uploadProgress').classList.add('active');
-          for (let f of inputFiles) {
-            const data = new Uint8Array(await f.arrayBuffer());
-            pyodide.FS.writeFile(f.name, data);
-          }
-          document.getElementById('uploadProgress').classList.remove('active');
+        
+        showLoader('A escrever ficheiros de entrada...');
+        const initialFiles = new Set(pyodide.FS.readdir('.').filter(f => f !== '.' && f !== '..'));
+        
+        for (let f of inputFiles) {
+          const data = new Uint8Array(await f.arrayBuffer());
+          pyodide.FS.writeFile(f.name, data, { encoding: "binary" });
         }
         
         showLoader('A executar o script Python...');
         
-        let result = await pyodide.runPythonAsync(`
-import sys, io
+        // Isolar a execução do script para capturar stdout e stderr
+        pyodide.globals.set('__script_code__', code);
+        pyodide.globals.set('__sys_argv__', [scriptFile.name, ...args]);
+        pyodide.globals.set('__stdin_text__', stdinText);
+
+        let result_json = await pyodide.runPythonAsync(`
+import sys, io, json, traceback
 from contextlib import redirect_stdout, redirect_stderr
 
-# Define sys.argv a partir dos argumentos passados do JS
-sys.argv = ${JSON.stringify([scriptFile.name, ...args])}
+# Obter variáveis do escopo global do JS
+code = __script_code__
+sys.argv = __sys_argv__
+stdin_text = __stdin_text__
 
-_stdout = io.StringIO()
-_stderr = io.StringIO()
+# Redirecionar stdin, stdout, e stderr
+sys.stdin = io.StringIO(stdin_text)
+stdout_capture = io.StringIO()
+stderr_capture = io.StringIO()
 
-with redirect_stdout(_stdout), redirect_stderr(_stderr):
-    try:
-        exec(${JSON.stringify(code)}, {})
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
+result = {"stdout": "", "stderr": ""}
+try:
+    with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
+        exec(code, {})
+except Exception:
+    # Se ocorrer um erro, imprime-o para stderr para ser capturado
+    traceback.print_exc()
+finally:
+    result["stdout"] = stdout_capture.getvalue()
+    result["stderr"] = stderr_capture.getvalue()
 
-_stdout.getvalue() + ("\\n\\n--- ERROS (stderr) ---\\n" + _stderr.getvalue() if _stderr.getvalue() else "")
+# Retorna o resultado como uma string JSON
+json.dumps(result)
         `);
         
-        hideLoader();
-        output.textContent = result || '✅ Script executado com sucesso (sem saída)';
+        const result = JSON.parse(result_json);
+
+        // Limpar o escopo global
+        pyodide.globals.delete('__script_code__');
+        pyodide.globals.delete('__sys_argv__');
+        pyodide.globals.delete('__stdin_text__');
+        
+        // Exibir stdout e stderr
+        output.innerHTML = '';
+        if(result.stdout) {
+            const stdoutNode = document.createTextNode(result.stdout);
+            output.appendChild(stdoutNode);
+        }
+        if(result.stderr) {
+            const stderrNode = document.createElement('span');
+            stderrNode.className = 'error-log';
+            stderrNode.textContent = `\n--- ERROS (stderr) ---\n${result.stderr}`;
+            output.appendChild(stderrNode);
+        }
+        if (!result.stdout && !result.stderr) {
+            output.textContent = '✅ Script executado com sucesso (sem saída para a consola).';
+        }
+        
+        // Detetar e mostrar links para ficheiros de saída
+        const finalFiles = new Set(pyodide.FS.readdir('.').filter(f => f !== '.' && f !== '..'));
+        const newFiles = [...finalFiles].filter(f => !initialFiles.has(f));
+        generateDownloadLinks(newFiles);
+
       } catch (err) {
-        hideLoader();
         output.textContent = "❌ Erro: " + err.message;
+      } finally {
+        hideLoader();
       }
     }
   </script>
 </body>
 </html>
-
