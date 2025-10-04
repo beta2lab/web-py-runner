@@ -419,7 +419,7 @@
     function findRequiredPackages(code) {
       const packages = new Set();
       // Lista de módulos da biblioteca padrão para ignorar
-      const stdLib = new Set(['os', 'sys', 'math', 'json', 'io', 're', 'traceback', 'contextlib', 'random', 'datetime']);
+      const stdLib = new Set(['os', 'sys', 'math', 'json', 'io', 're', 'traceback', 'contextlib', 'random', 'datetime', 'glob']);
       
       // Regex para declarações como 'import pandas' ou 'from numpy import ...'
       const importRegex = /(?:^|\n)\s*(?:import|from)\s+([a-zA-Z0-9_]+)/g;
