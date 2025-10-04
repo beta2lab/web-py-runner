@@ -416,6 +416,17 @@
       document.getElementById('output').textContent = '';
     }
 
+    function findRequiredPackages(code) {
+      const packages = new Set();
+      // Regex para declarações como 'import pandas' ou 'from numpy import ...'
+      const importRegex = /(?:^|\n)\s*(?:import|from)\s+([a-zA-Z0-9_]+)/g;
+      let match;
+      while ((match = importRegex.exec(code)) !== null) {
+        packages.add(match[1]);
+      }
+      return Array.from(packages);
+    }
+
     async function runScript() {
       if (isLoading) return;
 
@@ -434,11 +445,21 @@
         return;
       }
 
-      showLoader('A executar o script Python...');
+      showLoader('A analisar o script...');
       output.textContent = '';
 
       try {
         const pyodide = await pyodideReady;
+        const code = await scriptFile.text();
+        
+        // Deteta e carrega pacotes necessários como pandas, numpy, etc.
+        const requiredPackages = findRequiredPackages(code);
+        if (requiredPackages.length > 0) {
+            showLoader(`A carregar pacotes: ${requiredPackages.join(', ')}...`);
+            await pyodide.loadPackage(requiredPackages);
+        }
+
+        showLoader('A preparar o ambiente...');
 
         // Mostra o progresso para o upload de ficheiros
         if (inputFiles.length > 0) {
@@ -449,11 +470,9 @@
           }
           document.getElementById('uploadProgress').classList.remove('active');
         }
-
-        const code = await scriptFile.text();
-
-        // **CORREÇÃO AQUI**
-        // Definir sys.argv e executar o código num único bloco
+        
+        showLoader('A executar o script Python...');
+        
         let result = await pyodide.runPythonAsync(`
 import sys, io
 from contextlib import redirect_stdout, redirect_stderr
