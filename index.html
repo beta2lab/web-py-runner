@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Python Script Runner (Pyodide)</title>
+  <title>Executor de Scripts Python (Pyodide)</title>
   <script src="https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js"></script>
   <style>
     * {
@@ -222,7 +222,7 @@
     }
 
     #output:empty::before {
-      content: "Output will appear here...";
+      content: "A saída aparecerá aqui...";
       color: var(--text-secondary);
       font-style: italic;
     }
@@ -295,20 +295,20 @@
 <body>
   <div class="container">
     <header>
-      <h1>🐍 Python Script Runner</h1>
-      <button class="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">🌙</button>
+      <h1>🐍 Executor de Scripts Python</h1>
+      <button class="theme-toggle" onclick="toggleTheme()" title="Alternar modo escuro">🌙</button>
     </header>
 
     <div class="card">
       <form onsubmit="event.preventDefault(); runScript();">
         <div class="form-group">
-          <label for="scriptFile">📄 Python Script (.py)</label>
+          <label for="scriptFile">📄 Script Python (.py)</label>
           <input type="file" id="scriptFile" accept=".py" required onchange="updateFileInfo('script')">
           <div id="scriptInfo" class="file-info" style="display:none;"></div>
         </div>
 
         <div class="form-group">
-          <label for="inputFiles">📁 Input Files (optional)</label>
+          <label for="inputFiles">📁 Ficheiros de Entrada (opcional)</label>
           <input type="file" id="inputFiles" multiple onchange="updateFileInfo('input')">
           <div id="inputInfo" class="file-info" style="display:none;"></div>
           <div class="progress-bar" id="uploadProgress">
@@ -317,29 +317,29 @@
         </div>
 
         <div class="form-group">
-          <label for="args">⚙️ Command Line Arguments (optional)</label>
-          <input type="text" id="args" placeholder="e.g., input.txt output.txt --verbose">
+          <label for="args">⚙️ Argumentos de Linha de Comandos (opcional)</label>
+          <input type="text" id="args" placeholder="ex: entrada.txt saida.txt --verbose">
         </div>
 
         <div class="button-group">
           <button type="submit" class="btn-primary" id="runBtn">
-            ▶️ Run Script
+            ▶️ Executar Script
           </button>
           <button type="button" class="btn-secondary" onclick="clearOutput()">
-            🗑️ Clear Output
+            🗑️ Limpar Saída
           </button>
         </div>
       </form>
 
       <div class="loader" id="loader">
         <div class="spinner"></div>
-        <div class="status-message" id="statusMessage">Loading Pyodide...</div>
+        <div class="status-message" id="statusMessage">A carregar Pyodide...</div>
       </div>
     </div>
 
     <div class="card">
       <div class="output-header">
-        <h2>📤 Output</h2>
+        <h2>📤 Saída</h2>
       </div>
       <pre id="output"></pre>
     </div>
@@ -349,16 +349,16 @@
     let pyodideReady = null;
     let isLoading = false;
 
-    // Initialize Pyodide on page load
+    // Inicializa o Pyodide ao carregar a página
     window.addEventListener('DOMContentLoaded', async () => {
-      showLoader('Loading Pyodide environment...');
+      showLoader('A carregar ambiente Pyodide...');
       try {
         pyodideReady = await loadPyodide();
         hideLoader();
-        document.getElementById('output').textContent = '✅ Pyodide loaded successfully! Ready to run Python scripts.';
+        document.getElementById('output').textContent = '✅ Pyodide carregado com sucesso! Pronto para executar scripts Python.';
       } catch (err) {
         hideLoader();
-        document.getElementById('output').textContent = '❌ Error loading Pyodide: ' + err.message;
+        document.getElementById('output').textContent = '❌ Erro ao carregar Pyodide: ' + err.message;
       }
     });
 
@@ -397,7 +397,7 @@
         if (files.length > 0) {
           info.style.display = 'flex';
           const totalSize = Array.from(files).reduce((sum, f) => sum + f.size, 0);
-          info.textContent = `📦 ${files.length} file(s) selected (${formatBytes(totalSize)})`;
+          info.textContent = `📦 ${files.length} ficheiro(s) selecionado(s) (${formatBytes(totalSize)})`;
         } else {
           info.style.display = 'none';
         }
@@ -416,6 +416,23 @@
       document.getElementById('output').textContent = '';
     }
 
+    function findRequiredPackages(code) {
+      const packages = new Set();
+      // Lista de módulos da biblioteca padrão para ignorar
+      const stdLib = new Set(['os', 'sys', 'math', 'json', 'io', 're', 'traceback', 'contextlib', 'random', 'datetime']);
+      
+      // Regex para declarações como 'import pandas' ou 'from numpy import ...'
+      const importRegex = /(?:^|\n)\s*(?:import|from)\s+([a-zA-Z0-9_]+)/g;
+      let match;
+      while ((match = importRegex.exec(code)) !== null) {
+        const pkg = match[1];
+        if (!stdLib.has(pkg)) {
+            packages.add(pkg);
+        }
+      }
+      return Array.from(packages);
+    }
+
     async function runScript() {
       if (isLoading) return;
 
@@ -425,22 +442,32 @@
       const output = document.getElementById("output");
 
       if (!scriptFile) {
-        output.textContent = "❌ Please select a Python script.";
+        output.textContent = "❌ Por favor, selecione um script Python.";
         return;
       }
 
       if (!pyodideReady) {
-        output.textContent = "⏳ Pyodide is still loading. Please wait...";
+        output.textContent = "⏳ Pyodide ainda está a carregar. Por favor, aguarde...";
         return;
       }
 
-      showLoader('Executing Python script...');
+      showLoader('A analisar o script...');
       output.textContent = '';
 
       try {
         const pyodide = await pyodideReady;
+        const code = await scriptFile.text();
+        
+        // Deteta e carrega pacotes necessários como pandas, numpy, etc.
+        const requiredPackages = findRequiredPackages(code);
+        if (requiredPackages.length > 0) {
+            showLoader(`A carregar pacotes: ${requiredPackages.join(', ')}...`);
+            await pyodide.loadPackage(requiredPackages);
+        }
 
-        // Show progress for file uploads
+        showLoader('A preparar o ambiente...');
+
+        // Mostra o progresso para o upload de ficheiros
         if (inputFiles.length > 0) {
           document.getElementById('uploadProgress').classList.add('active');
           for (let f of inputFiles) {
@@ -449,34 +476,37 @@
           }
           document.getElementById('uploadProgress').classList.remove('active');
         }
-
-        const code = await scriptFile.text();
-
-        pyodide.runPython(`
-import sys, io
-from contextlib import redirect_stdout, redirect_stderr
-_stdout = io.StringIO()
-_stderr = io.StringIO()
-`);
-        pyodide.setSysArgv([scriptFile.name, ...args]);
+        
+        showLoader('A executar o script Python...');
         
         let result = await pyodide.runPythonAsync(`
+import sys, io
+from contextlib import redirect_stdout, redirect_stderr
+
+# Define sys.argv a partir dos argumentos passados do JS
+sys.argv = ${JSON.stringify([scriptFile.name, ...args])}
+
+_stdout = io.StringIO()
+_stderr = io.StringIO()
+
 with redirect_stdout(_stdout), redirect_stderr(_stderr):
     try:
         exec(${JSON.stringify(code)}, {})
     except Exception as e:
         import traceback
         traceback.print_exc()
-_stdout.getvalue() + ("\\n\\n--- STDERR ---\\n" + _stderr.getvalue() if _stderr.getvalue() else "")
+
+_stdout.getvalue() + ("\\n\\n--- ERROS (stderr) ---\\n" + _stderr.getvalue() if _stderr.getvalue() else "")
         `);
         
         hideLoader();
-        output.textContent = result || '✅ Script executed successfully (no output)';
+        output.textContent = result || '✅ Script executado com sucesso (sem saída)';
       } catch (err) {
         hideLoader();
-        output.textContent = "❌ Error: " + err.message;
+        output.textContent = "❌ Erro: " + err.message;
       }
     }
   </script>
 </body>
 </html>
+
